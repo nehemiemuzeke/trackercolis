@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { io } from 'socket.io-client'
 
-export const URL_API = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
+export const URL_API = import.meta.env.VITE_API_URL || 'https://trackercolis-backend.onrender.com'
 
 const CLE_JETON_ACCES = 'colis_rdc.jeton_acces'
 const CLE_JETON_RAFRAICHISSEMENT = 'colis_rdc.jeton_rafraichissement'
@@ -146,7 +146,7 @@ export function definirJetonAcces(jeton) {
 
 const instance = axios.create({
   baseURL: URL_API,
-  timeout: 15000,
+  timeout: 45000,
   headers: { 'Content-Type': 'application/json' }
 })
 

@@ -3,7 +3,6 @@ import compression from 'compression'
 import cors from 'cors'
 import express from 'express'
 import helmet from 'helmet'
-import { originesCors } from './config/env'
 import { contexteRequete, journalAcces } from './middlewares/contexte-requete'
 import { gestionnaireErreurs } from './middlewares/gestionnaire-erreurs'
 import { limiteurGlobal } from './middlewares/limiteurs'
@@ -15,13 +14,33 @@ export function creerApplication(): express.Express {
 
   application.disable('x-powered-by')
   application.set('trust proxy', 1)
-  application.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
-  application.use(cors({ origin: originesCors, credentials: true }))
+
+  // Configuration Helmet assouplie pour la production
+  application.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      crossOriginEmbedderPolicy: false
+    })
+  )
+
+  // Configuration CORS dynamique (accepte Vercel, Mobile, Localhost avec credentials)
+  application.use(
+    cors({
+      origin: (origin, callback) => {
+        // Autorise toutes les origines (Vercel, Mobile, Curl, Localhost)
+        callback(null, true)
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
+    })
+  )
+
   application.use(compression())
   application.use(express.json({ limit: '10mb' }))
   application.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
-  // Service des fichiers médias (images produits)
+  // Service des fichiers statiques (photos produits)
   application.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))
 
   application.use(contexteRequete)

@@ -1,0 +1,276 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================
+// ÉNUMÉRATIONS GLOBALES
+// =====================================================
+
+enum Role {
+  CLIENT
+  ADMIN_RDC
+  ADMIN_CHINE
+}
+
+enum StatutCommande {
+  COMMANDE_CREEE
+  COMMANDE_VALIDEE_RDC
+  TRANSMISE_CHINE
+  ACCEPTEE_CHINE
+  COLIS_PREPARE
+  EXPEDIE_CHINE
+  EN_TRANSIT
+  ARRIVE_RDC
+  EN_LIVRAISON
+  LIVRE
+}
+
+enum StatutPaiement {
+  EN_ATTENTE
+  PAYE
+  REMBOURSE
+}
+
+enum TypeActeur {
+  CLIENT
+  ADMIN_RDC
+  ADMIN_CHINE
+  SYSTEME
+}
+
+enum TypeNotification {
+  STATUT_CHANGE
+  NOUVELLE_COMMANDE
+  MESSAGE
+  ALERTE
+}
+
+enum StatutProduit {
+  BROUILLON
+  PUBLIE
+  RUPTURE
+  ARCHIVE
+}
+
+// =====================================================
+// UTILISATEURS & AUTHENTIFICATION
+// =====================================================
+
+model User {
+  id           String   @id @default(uuid())
+  nom          String
+  prenom       String
+  email        String   @unique
+  mot_de_passe String
+  telephone    String
+  role         Role     @default(CLIENT)
+  adresse      String?
+  ville        String?
+  pays         String?
+  photo_profil String?
+  fcm_token    String?
+  est_actif    Boolean  @default(true)
+  cree_le      DateTime @default(now())
+  modifie_le   DateTime @updatedAt
+
+  commandes_client       Commande[]     @relation("CommandeClient")
+  commandes_admin_rdc    Commande[]     @relation("CommandeAdminRdc")
+  commandes_admin_chine  Commande[]     @relation("CommandeAdminChine")
+  produits_crees         Produit[]      @relation("ProduitsVendeur")
+  suivis_declenches      SuiviColis[]   @relation("SuiviDeclenchePar")
+  notifications          Notification[]
+  messages_envoyes       Message[]      @relation("MessageExpediteur")
+  messages_recus         Message[]      @relation("MessageDestinataire")
+
+  @@index([role, est_actif])
+  @@map("users")
+}
+
+// =====================================================
+// COMMANDES & SUIVI LOGISTIQUE
+// =====================================================
+
+model Commande {
+  id                     String         @id @default(uuid())
+  numero_commande        String         @unique
+  numero_tracking        String         @unique
+  client_id              String
+  description_produit    String
+  categorie_produit      String
+  quantite               Int
+  poids_estime_kg        Float
+  valeur_declaree_usd    Float
+  adresse_livraison      String
+  ville_livraison        String
+  statut_actuel          StatutCommande @default(COMMANDE_CREEE)
+  etape_actuelle         Int            @default(1)
+  admin_rdc_id           String?
+  admin_chine_id         String?
+  frais_service_usd      Float
+  frais_livraison_usd    Float
+  montant_total_usd      Float
+  statut_paiement        StatutPaiement @default(EN_ATTENTE)
+  date_livraison_estimee DateTime
+  date_livraison_reelle  DateTime?
+  notes_client           String?
+  notes_admin_rdc        String?
+  notes_admin_chine      String?
+  cree_le                DateTime       @default(now())
+  modifie_le             DateTime       @updatedAt
+
+  client        User            @relation("CommandeClient", fields: [client_id], references: [id], onDelete: Cascade)
+  admin_rdc     User?           @relation("CommandeAdminRdc", fields: [admin_rdc_id], references: [id], onDelete: SetNull)
+  admin_chine   User?           @relation("CommandeAdminChine", fields: [admin_chine_id], references: [id], onDelete: SetNull)
+  lignes        LigneCommande[]
+  suivis        SuiviColis[]
+  notifications Notification[]
+  messages      Message[]
+
+  @@index([statut_actuel])
+  @@index([etape_actuelle])
+  @@index([client_id])
+  @@index([admin_rdc_id])
+  @@index([admin_chine_id])
+  @@index([cree_le])
+  @@map("commandes")
+}
+
+model SuiviColis {
+  id            String         @id @default(uuid())
+  commande_id   String
+  numero_etape  Int
+  statut        StatutCommande
+  label         String
+  description   String
+  lieu          String
+  latitude      Float?
+  longitude     Float?
+  declenche_par String?
+  type_acteur   TypeActeur
+  photo_preuve  String?
+  signature_url String?
+  cree_le       DateTime       @default(now())
+
+  commande    Commande @relation(fields: [commande_id], references: [id], onDelete: Cascade)
+  declencheur User?    @relation("SuiviDeclenchePar", fields: [declenche_par], references: [id], onDelete: SetNull)
+
+  @@index([commande_id, cree_le])
+  @@index([statut])
+  @@map("suivi_colis")
+}
+
+// =====================================================
+// NOTIFICATIONS & MESSAGERIE
+// =====================================================
+
+model Notification {
+  id          String           @id @default(uuid())
+  user_id     String
+  commande_id String?
+  titre       String
+  message     String
+  type        TypeNotification
+  est_lu      Boolean          @default(false)
+  cree_le     DateTime         @default(now())
+
+  user     User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  commande Commande? @relation(fields: [commande_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, est_lu])
+  @@index([user_id, cree_le])
+  @@index([commande_id])
+  @@map("notifications")
+}
+
+model Message {
+  id              String   @id @default(uuid())
+  commande_id     String
+  expediteur_id   String
+  destinataire_id String
+  contenu         String
+  piece_jointe    String?
+  est_lu          Boolean  @default(false)
+  cree_le         DateTime @default(now())
+
+  commande     Commande @relation(fields: [commande_id], references: [id], onDelete: Cascade)
+  expediteur   User     @relation("MessageExpediteur", fields: [expediteur_id], references: [id], onDelete: Cascade)
+  destinataire User     @relation("MessageDestinataire", fields: [destinataire_id], references: [id], onDelete: Cascade)
+
+  @@index([commande_id, cree_le])
+  @@index([destinataire_id, est_lu])
+  @@map("messages")
+}
+
+// =====================================================
+// BOUTIQUE EN LIGNE
+// =====================================================
+
+model Categorie {
+  id          String    @id @default(uuid())
+  nom         String    @unique
+  description String?
+  icone       String?
+  ordre       Int       @default(0)
+  est_active  Boolean   @default(true)
+  cree_le     DateTime  @default(now())
+  modifie_le  DateTime  @updatedAt
+
+  produits    Produit[]
+
+  @@map("categories")
+}
+
+model Produit {
+  id                 String        @id @default(uuid())
+  reference          String        @unique
+  nom                String
+  description        String
+  description_courte String?
+  prix_usd           Float
+  prix_promo_usd     Float?
+  stock              Int           @default(0)
+  poids_kg           Float         @default(0.5)
+  categorie_id       String?
+  images             String[]
+  image_principale   String?
+  statut             StatutProduit @default(BROUILLON)
+  est_vedette        Boolean       @default(false)
+  tags               String[]
+  vendeur_id         String?
+  vues               Int           @default(0)
+  cree_le            DateTime      @default(now())
+  modifie_le         DateTime      @updatedAt
+
+  categorie       Categorie?      @relation(fields: [categorie_id], references: [id], onDelete: SetNull)
+  vendeur         User?           @relation("ProduitsVendeur", fields: [vendeur_id], references: [id], onDelete: SetNull)
+  lignes_commande LigneCommande[]
+
+  @@index([statut])
+  @@index([categorie_id])
+  @@index([est_vedette])
+  @@index([nom])
+  @@map("produits")
+}
+
+model LigneCommande {
+  id            String   @id @default(uuid())
+  commande_id   String
+  produit_id    String?
+  nom_produit   String
+  quantite      Int
+  prix_unitaire Float
+  sous_total    Float
+  cree_le       DateTime @default(now())
+
+  commande Commande @relation(fields: [commande_id], references: [id], onDelete: Cascade)
+  produit  Produit? @relation(fields: [produit_id], references: [id], onDelete: SetNull)
+
+  @@index([commande_id])
+  @@index([produit_id])
+  @@map("lignes_commande")
+}
